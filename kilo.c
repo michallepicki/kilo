@@ -25,6 +25,8 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+#define abAppendLit(ab, s) abAppend(ab, s, sizeof(s) - 1)
+
 enum editorKey {
   BACKSPACE = 127,
   ARROW_LEFT = 1000,
@@ -534,13 +536,13 @@ void editorDrawRows(struct abuf *ab) {
           welcome_len = E.screen_cols;
         int padding = (E.screen_cols - welcome_len) / 2;
         if (padding) {
-          abAppend(ab, "~", 1);
+          abAppendLit(ab, "~");
           padding--;
         }
-        while (padding--) abAppend(ab, " ", 1);
+        while (padding--) abAppendLit(ab, " ");
         abAppend(ab, welcome, welcome_len);
       } else {
-        abAppend(ab, "~", 1);
+        abAppendLit(ab, "~");
       }
     } else {
       int len = E.row[file_row].render_size - E.col_offset;
@@ -548,12 +550,12 @@ void editorDrawRows(struct abuf *ab) {
       if (len > E.screen_cols) len = E.screen_cols;
       abAppend(ab, E.row[file_row].render + E.col_offset, len);
     }
-    abAppend(ab, "\x1b[K\r\n", 5); // Erase In Line
+    abAppendLit(ab, "\x1b[K\r\n"); // Erase In Line
   }
 }
 
 void editorDrawStatusBar(struct abuf *ab) {
-  abAppend(ab, "\x1b[7m", 4); // Select Graphic Rendition - inverted colors
+  abAppendLit(ab, "\x1b[7m"); // Select Graphic Rendition - inverted colors
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines%s",
     E.file_name ? E.file_name : "[No File name]",
@@ -567,15 +569,15 @@ void editorDrawStatusBar(struct abuf *ab) {
       abAppend(ab, rstatus, rlen);
       break;
     } else {
-      abAppend(ab, " ", 1);
+      abAppendLit(ab, " ");
       len++;
     }
   }
-  abAppend(ab, "\x1b[m\r\n", 5); // Select Graphic Rendition - clear
+  abAppendLit(ab, "\x1b[m\r\n"); // Select Graphic Rendition - clear
 }
 
 void editorDrawMessageBar(struct abuf *ab) {
-  abAppend(ab, "\x1b[K", 3); // Erase In Line
+  abAppendLit(ab, "\x1b[K"); // Erase In Line
   int msglen = strlen(E.statusmsg);
   if (msglen > E.screen_cols)
     msglen = E.screen_cols;
@@ -588,7 +590,7 @@ void editorRefreshScreen() {
 
   struct abuf ab = ABUF_INIT;
 
-  abAppend(&ab, "\x1b[?25l\x1b[H", 9); // Reset Mode - draw cursor, Cursor Position
+  abAppendLit(&ab, "\x1b[?25l\x1b[H"); // Reset Mode - draw cursor, Cursor Position
 
   editorDrawRows(&ab);
   editorDrawStatusBar(&ab);
@@ -598,7 +600,7 @@ void editorRefreshScreen() {
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.row_offset) + 1, (E.rx - E.col_offset) + 1); // Cursor Position
   abAppend(&ab, buf, strlen(buf));
 
-  abAppend(&ab, "\x1b[?25h", 6); // Set Mode - draw cursor
+  abAppendLit(&ab, "\x1b[?25h"); // Set Mode - draw cursor
 
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
