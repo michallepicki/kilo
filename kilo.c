@@ -17,6 +17,36 @@
 #include <time.h>
 #include <unistd.h>
 
+/*** debug logging ***/
+
+#define DEBUG_FILE_LOG 1
+
+int log_file = -1;
+char log_buffer[200];
+
+void initLogger() {
+  #if DEBUG_FILE_LOG
+    log_file = open("editor.log", O_RDWR | O_CREAT, 0644);
+    if (log_file != -1)
+      ftruncate(log_file, 0);
+  #endif
+}
+
+void debug_log(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(log_buffer, sizeof(log_buffer), fmt, ap);
+  va_end(ap);
+  write(log_file, log_buffer, strlen(log_buffer));
+  write(log_file, "\n", 1);
+}
+
+#if DEBUG_FILE_LOG
+  #define DEBUG_LOG(...) debug_log(__VA_ARGS__)
+#else
+  #define DEBUG_LOG(...)
+#endif
+
 /*** defines ***/
 
 #define KILO_VERSION "0.0.1"
@@ -24,8 +54,6 @@
 #define KILO_QUIT_TIMES 1
 
 #define CTRL_KEY(k) ((k) & 0x1f)
-
-#define abAppendLit(ab, s) abAppend(ab, s, sizeof(s) - 1)
 
 enum editorKey {
   BACKSPACE = 127,
@@ -53,6 +81,30 @@ enum editorHighlight {
 
 #define HL_HIGHLIGHT_NUMBERS  (1<<0)
 #define HL_HIGHLIGHT_STRINGS  (1<<1)
+
+/*** append buffer ***/
+
+struct abuf {
+  char *b;
+  int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+#define abAppendLit(ab, s) abAppend(ab, s, sizeof(s) - 1)
+
+void abAppend(struct abuf *ab, const char *s, int len) {
+  char *new = realloc(ab->b, ab->len + len);
+
+  if (new == NULL) return;
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+
+void abFree(struct abuf *ab) {
+  free(ab->b);
+}
 
 /*** data ***/
 
@@ -134,16 +186,21 @@ void die(const char *s) {
   exit(1);
 }
 
-void disableRawMode() {
+void restoreOrigTermios() {
+  DEBUG_LOG("restoring original terminal attributes");
+
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
     die("[ERROR] disableRawMode tcsetattr");
 }
 
-void enableRawMode() {
+void readOrigTermios() {
+  DEBUG_LOG("reading original terminal attributes");
+
   if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1)
     die("[ERROR] enableRawMode tcgetattr");
-  atexit(disableRawMode);
+}
 
+void enableRawMode() {
   struct termios raw = E.orig_termios;
   raw.c_iflag &= ~(BRKINT | ICRNL |INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
@@ -501,7 +558,6 @@ void editorInsertRow(int at, char *s, size_t row_length) {
   struct editorRow *row = &E.rows[at];
   memmove(&E.rows[at + 1], row, sizeof(struct editorRow) * (E.num_rows - at));
 
-
   row->size = row_length;
   row->chars = malloc(row_length + 1);
   memcpy(row->chars, s, row_length);
@@ -721,28 +777,6 @@ void editorFind() {
   }
 }
 
-/*** append buffer ***/
-
-struct abuf {
-  char *b;
-  int len;
-};
-
-#define ABUF_INIT {NULL, 0}
-
-void abAppend(struct abuf *ab, const char *s, int len) {
-  char *new = realloc(ab->b, ab->len + len);
-
-  if (new == NULL) return;
-  memcpy(&new[ab->len], s, len);
-  ab->b = new;
-  ab->len += len;
-}
-
-void abFree(struct abuf *ab) {
-  free(ab->b);
-}
-
 /*** output ***/
 
 void editorScroll() {
@@ -882,7 +916,7 @@ void editorRefreshScreen() {
 void editorSetStatusMessage(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap); // takes care of calling va_arg based on statically known fmt
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
   va_end(ap);
   E.statusmsg_time = time(NULL);
 }
@@ -1049,6 +1083,8 @@ void editorProcessKeypress() {
 /*** init ***/
 
 void initEditor() {
+  DEBUG_LOG("initializing the editor");
+
   E.cx = 0;
   E.cy = 0;
   E.rx = 0;
@@ -1067,7 +1103,19 @@ void initEditor() {
   E.screen_rows -= 2;
 }
 
+void cleanup() {
+  DEBUG_LOG("cleaning up");
+  restoreOrigTermios();
+  if (log_file != -1)
+    close(log_file);
+}
+
 int main(int argc, char *argv[]) {
+  readOrigTermios();
+  initLogger();
+
+  atexit(cleanup);
+
   enableRawMode();
   initEditor();
   if (argc >= 2)
