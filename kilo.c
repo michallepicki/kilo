@@ -6,6 +6,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -22,21 +23,27 @@
 #define DEBUG_FILE_LOG 1
 
 int log_file = -1;
-char log_buffer[200];
+
+void closeLogFile() {
+  if (log_file != -1)
+    close(log_file);
+}
 
 void initLogger() {
-  #if DEBUG_FILE_LOG
-    log_file = open("editor.log", O_RDWR | O_CREAT, 0644);
-    if (log_file != -1)
-      ftruncate(log_file, 0);
-  #endif
+  atexit(closeLogFile);
+  log_file = open("editor.log", O_RDWR | O_CREAT, 0644);
+  assert(log_file != -1);
+  ftruncate(log_file, 0);
 }
+
+char log_buffer[200];
 
 void debug_log(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   vsnprintf(log_buffer, sizeof(log_buffer), fmt, ap);
   va_end(ap);
+  assert(log_file != -1);
   write(log_file, log_buffer, strlen(log_buffer));
   write(log_file, "\n", 1);
 }
@@ -93,10 +100,9 @@ struct abuf {
 
 #define abAppendLit(ab, s) abAppend(ab, s, sizeof(s) - 1)
 
-void abAppend(struct abuf *ab, const char *s, int len) {
+void abAppend(struct abuf *ab, char *s, int len) {
   char *new = realloc(ab->b, ab->len + len);
-
-  if (new == NULL) return;
+  assert(new != NULL);
   memcpy(&new[ab->len], s, len);
   ab->b = new;
   ab->len += len;
@@ -201,6 +207,9 @@ void readOrigTermios() {
 }
 
 void enableRawMode() {
+  readOrigTermios();
+  atexit(restoreOrigTermios);
+
   struct termios raw = E.orig_termios;
   raw.c_iflag &= ~(BRKINT | ICRNL |INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
@@ -313,6 +322,8 @@ int is_separator(int c) {
 
 void editorUpdateSyntax(struct editorRow *row, int row_idx) {
   row->hl = realloc(row->hl, row->render_size);
+  if (row->render_size != 0)
+    assert(row->hl != NULL);
   memset(row->hl, HL_NORMAL, row->render_size);
 
   if (E.syntax == NULL) return;
@@ -503,6 +514,7 @@ void editorUpdateRow(struct editorRow *row, int row_idx) {
 
   free(row->render);
   row->render = malloc(row->size + (tabs * (KILO_TAB_STOP - 1)) + 1);
+  assert(row->render != NULL);
 
   int idx = 0;
   for (j = 0; j < row->size; j++) {
@@ -526,6 +538,7 @@ void editorUpdateRow(struct editorRow *row, int row_idx) {
 void editorRowInsertChar(struct editorRow *row, int row_idx, int at, int c) {
   if (at < 0 || at > row->size) at = row->size;
   row->chars = realloc(row->chars, row->size + 2);
+  assert(row->chars != NULL);
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
   row->size++;
   row->chars[at] = c;
@@ -535,6 +548,7 @@ void editorRowInsertChar(struct editorRow *row, int row_idx, int at, int c) {
 
 void editorRowAppendString(struct editorRow *row, int row_idx, char *s, size_t len) {
   row->chars = realloc(row->chars, row->size + len + 1);
+  assert(row->chars != NULL);
   memcpy(&row->chars[row->size], s, len);
   row->size += len;
   row->chars[row->size] = '\0';
@@ -543,7 +557,7 @@ void editorRowAppendString(struct editorRow *row, int row_idx, char *s, size_t l
 }
 
 void editorRowDelChar(struct editorRow *row, int row_idx, int at) {
-  if (at < 0 || at > row->size) return;
+  assert(at >= 0 && at <= row->size);
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
   editorUpdateRow(row, row_idx);
@@ -551,15 +565,16 @@ void editorRowDelChar(struct editorRow *row, int row_idx, int at) {
 }
 
 void editorInsertRow(int at, char *s, size_t row_length) {
-  if (at < 0 || at > E.num_rows)
-    return;
+  assert(at >= 0 && at <= E.num_rows);
 
   E.rows = realloc(E.rows, sizeof(struct editorRow) * (E.num_rows + 1));
+  assert(E.rows != NULL);
   struct editorRow *row = &E.rows[at];
   memmove(&E.rows[at + 1], row, sizeof(struct editorRow) * (E.num_rows - at));
 
   row->size = row_length;
   row->chars = malloc(row_length + 1);
+  assert(row->chars != NULL);
   memcpy(row->chars, s, row_length);
   row->chars[row_length] = '\0';
 
@@ -580,8 +595,7 @@ void editorFreeRow(struct editorRow *row) {
 }
 
 void editorDelRow(int at) {
-  if (at < 0 || at >= E.num_rows)
-    return;
+  assert(at >= 0 && at < E.num_rows);
   editorFreeRow(&E.rows[at]);
   memmove(&E.rows[at], &E.rows[at + 1], sizeof(struct editorRow) * (E.num_rows - at - 1));
   E.num_rows--;
@@ -639,6 +653,7 @@ char *editorRowsToString(int *buffer_length) {
   *buffer_length = total_length;
 
   char *buffer = malloc(total_length);
+  assert(buffer != NULL);
   char *p = buffer;
   for (j = 0; j < E.num_rows; j++) {
     memcpy(p, E.rows[j].chars, E.rows[j].size);
@@ -752,6 +767,7 @@ void editorFindCallback(char *query, int key) {
 
       saved_hl_line = current;
       saved_hl = malloc(row->render_size);
+      assert(saved_hl != NULL);
       memcpy(saved_hl, row->hl, row->render_size);
       memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
       break;
@@ -885,11 +901,16 @@ void editorDrawStatusBar(struct abuf *ab) {
 
 void editorDrawMessageBar(struct abuf *ab) {
   abAppendLit(ab, "\x1b[K"); // Erase In Line
-  int msglen = strlen(E.statusmsg);
-  if (msglen > E.screen_cols)
-    msglen = E.screen_cols;
-  if (msglen && time(NULL) - E.statusmsg_time < 5)
-    abAppend(ab, E.statusmsg, msglen);
+  if (E.statusmsg[0]) {
+    int msglen = strlen(E.statusmsg);
+    if (msglen > E.screen_cols)
+      msglen = E.screen_cols;
+    if (time(NULL) - E.statusmsg_time < 5) {
+      abAppend(ab, E.statusmsg, msglen);
+    } else {
+      E.statusmsg[0] = '\0';
+    }
+  }
 }
 
 void editorRefreshScreen() {
@@ -926,6 +947,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   size_t buffer_size = 128;
   char *buffer = malloc(buffer_size);
+  assert(buffer != NULL);
 
   size_t buffer_length = 0;
   buffer[0] = '\0';
@@ -955,6 +977,7 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
       if (buffer_length == buffer_size - 1) {
         buffer_size *= 2;
         buffer = realloc(buffer, buffer_size);
+        assert(buffer != NULL);
       }
       buffer[buffer_length] = c;
       buffer_length++;
@@ -996,7 +1019,7 @@ void editorMoveCursor(int key) {
   }
 
   row = (E.cy >= E.num_rows) ? NULL : &E.rows[E.cy];
-  int row_length = row ? row-> size : 0;
+  int row_length = row ? row->size : 0;
   if (E.cx > row_length) {
     E.cx = row_length;
   }
@@ -1100,24 +1123,17 @@ void initEditor() {
 
   if (getWindowSize(&E.screen_rows, &E.screen_cols) == -1)
     die("[ERROR] initEditor getWindowSize");
-  E.screen_rows -= 2;
-}
 
-void cleanup() {
-  DEBUG_LOG("cleaning up");
-  restoreOrigTermios();
-  if (log_file != -1)
-    close(log_file);
+  E.screen_rows -= 2; // reserve space for status and message bars
 }
 
 int main(int argc, char *argv[]) {
-  readOrigTermios();
-  initLogger();
-
-  atexit(cleanup);
-
+  #if DEBUG_FILE_LOG
+    initLogger();
+  #endif
   enableRawMode();
   initEditor();
+
   if (argc >= 2)
     editorOpen(argv[1]);
 
