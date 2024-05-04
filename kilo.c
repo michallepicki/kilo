@@ -321,10 +321,14 @@ int is_separator(int c) {
 }
 
 void editorUpdateSyntax(struct editorRow *row, int row_idx) {
-  row->hl = realloc(row->hl, row->render_size);
-  if (row->render_size != 0)
+  if (row->render_size != 0){
+    row->hl = realloc(row->hl, row->render_size);
     assert(row->hl != NULL);
-  memset(row->hl, HL_NORMAL, row->render_size);
+    memset(row->hl, HL_NORMAL, row->render_size);
+  } else if (row->hl != NULL) {
+    free(row->hl);
+    row->hl = NULL;
+  }
 
   if (E.syntax == NULL) return;
 
