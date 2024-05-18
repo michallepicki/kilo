@@ -24,12 +24,12 @@
 
 int log_file = -1;
 
-void closeLogFile() {
+void closeLogFile(void) {
   if (log_file != -1)
     close(log_file);
 }
 
-void initLogger() {
+void initLogger(void) {
   atexit(closeLogFile);
   log_file = open("editor.log", O_RDWR | O_CREAT, 0644);
   assert(log_file != -1);
@@ -192,21 +192,21 @@ void die(const char *s) {
   exit(1);
 }
 
-void restoreOrigTermios() {
+void restoreOrigTermios(void) {
   DEBUG_LOG("restoring original terminal attributes");
 
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
     die("[ERROR] disableRawMode tcsetattr");
 }
 
-void readOrigTermios() {
+void readOrigTermios(void) {
   DEBUG_LOG("reading original terminal attributes");
 
   if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1)
     die("[ERROR] enableRawMode tcgetattr");
 }
 
-void enableRawMode() {
+void enableRawMode(void) {
   readOrigTermios();
   atexit(restoreOrigTermios);
 
@@ -222,7 +222,7 @@ void enableRawMode() {
     die("[ERROR] enableRawMode tcsetattr");
 }
 
-int editorReadKey() {
+int editorReadKey(void) {
   int n_read;
   char c;
   while ((n_read = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -456,7 +456,7 @@ int editorSyntaxToColor(int hl) {
   }
 }
 
-void editorSelectSyntaxHighlight() {
+void editorSelectSyntaxHighlight(void) {
   E.syntax = NULL;
   if (E.file_name == NULL) return;
 
@@ -616,7 +616,7 @@ void editorInsertChar(int c) {
   E.cx++;
 }
 
-void editorInsertNewline() {
+void editorInsertNewline(void) {
   if (E.cx == 0) {
     editorInsertRow(E.cy, "", 0);
   } else {
@@ -631,7 +631,7 @@ void editorInsertNewline() {
   E.cx = 0;
 }
 
-void editorDelChar() {
+void editorDelChar(void) {
   if (E.cy == E.num_rows || (E.cx == 0 && E.cy == 0))
     return;
 
@@ -694,7 +694,7 @@ void editorOpen(char *file_name) {
   E.dirty = 0;
 }
 
-void editorSave() {
+void editorSave(void) {
   if (E.file_name == NULL) {
     E.file_name = editorPrompt("Save as: %s (ESC to cancel)", NULL);
     if (E.file_name == NULL) {
@@ -779,7 +779,7 @@ void editorFindCallback(char *query, int key) {
   }
 }
 
-void editorFind() {
+void editorFind(void) {
   int saved_cx = E.cx;
   int saved_cy = E.cy;
   int saved_col_offset = E.col_offset;
@@ -799,7 +799,7 @@ void editorFind() {
 
 /*** output ***/
 
-void editorScroll() {
+void editorScroll(void) {
   E.rx = 0;
   if (E.cy < E.num_rows) {
     E.rx = editorRowCxToRx(&E.rows[E.cy], E.cx);
@@ -917,7 +917,7 @@ void editorDrawMessageBar(struct abuf *ab) {
   }
 }
 
-void editorRefreshScreen() {
+void editorRefreshScreen(void) {
   editorScroll();
 
   struct abuf ab = ABUF_INIT;
@@ -1029,7 +1029,7 @@ void editorMoveCursor(int key) {
   }
 }
 
-void editorProcessKeypress() {
+void editorProcessKeypress(void) {
   static int quit_times = KILO_QUIT_TIMES;
   int c = editorReadKey();
 
@@ -1109,7 +1109,7 @@ void editorProcessKeypress() {
 
 /*** init ***/
 
-void initEditor() {
+void initEditor(void) {
   DEBUG_LOG("initializing the editor");
 
   E.cx = 0;
